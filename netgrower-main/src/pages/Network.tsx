@@ -1,168 +1,144 @@
 
-import React, { useState } from 'react';
+// Update the import statement at the top of the file
+import React, { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, UserPlus, Users, UserCheck, UserX } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, UserPlus, Users, UserCheck, UserX, MessageSquare, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/use-toast';
+import { API_URL } from '@/services/api';
 
+// Update the NetworkUser interface to include the new status types
 interface NetworkUser {
   id: string;
   name: string;
-  avatar: string;
-  role: 'student' | 'alumni' | 'faculty';
-  department: string;
+  profile_picture: string;
+  college: string;
+  branch: string;
   batch?: string;
-  connection: 'connected' | 'pending' | 'none';
+  connection_status: 'connected' | 'pending-sent' | 'pending-received' | 'none';
 }
 
-// Mock network data
-const NETWORK_USERS: NetworkUser[] = [
-  {
-    id: 'user-1',
-    name: 'Aarav Patel',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=687&q=80',
-    role: 'alumni',
-    department: 'Computer Science',
-    batch: '2019',
-    connection: 'connected'
-  },
-  {
-    id: 'user-2',
-    name: 'Priya Singh',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=687&q=80',
-    role: 'alumni',
-    department: 'Electronics',
-    batch: '2020',
-    connection: 'pending'
-  },
-  {
-    id: 'user-3',
-    name: 'Dr. Rajeev Kumar',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=1170&q=80',
-    role: 'faculty',
-    department: 'Computer Science',
-    connection: 'none'
-  },
-  {
-    id: 'user-4',
-    name: 'Anjali Sharma',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=764&q=80',
-    role: 'student',
-    department: 'Electronics',
-    batch: '2023',
-    connection: 'connected'
-  },
-  {
-    id: 'user-5',
-    name: 'Vikram Malhotra',
-    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=687&q=80',
-    role: 'alumni',
-    department: 'Computer Science',
-    batch: '2019',
-    connection: 'connected'
-  },
-  {
-    id: 'user-6',
-    name: 'Neha Joshi',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=688&q=80',
-    role: 'student',
-    department: 'Mechanical Engineering',
-    batch: '2022',
-    connection: 'connected'
-  },
-  {
-    id: 'user-7',
-    name: 'Samarth Gupta',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=687&q=80',
-    role: 'student',
-    department: 'Computer Science',
-    batch: '2024',
-    connection: 'none'
+// Remove the duplicate import: import { useNavigate } from 'react-router-dom';
+
+// Add these helper functions before the NetworkUserCard component
+const getConnectionButtonText = (status: string) => {
+  switch (status) {
+    case 'connected':
+      return 'Connected';
+    case 'pending-sent':
+      return 'Pending';
+    case 'pending-received':
+      return 'Accept';
+    case 'none':
+      return 'Connect';
+    default:
+      return 'Connect';
   }
-];
+};
 
-// Network user card component
-const NetworkUserCard = ({ user, onUpdateConnection }: { 
-  user: NetworkUser, 
-  onUpdateConnection: (id: string, status: 'connected' | 'pending' | 'none') => void 
+// In the NetworkUserCard component, add a message button
+const NetworkUserCard = ({ user, onUpdateConnection }: {
+  user: NetworkUser,
+  onUpdateConnection: (id: string, status: 'connected' | 'pending' | 'none') => void
 }) => {
-  const handleConnect = () => {
-    onUpdateConnection(user.id, 'pending');
+  const navigate = useNavigate();
+
+  // Add this function to format profile picture URL
+  const getProfilePictureUrl = (profilePicture: string) => {
+    if (!profilePicture) return '';
+
+    // If it's already a full URL (starts with http or https), return as is
+    if (profilePicture.startsWith('http://') || profilePicture.startsWith('https://')) {
+      return profilePicture;
+    }
+
+    // Otherwise, prepend the API URL
+    return `${API_URL}${profilePicture.startsWith('/') ? '' : '/'}${profilePicture}`;
   };
 
-  const handleAccept = () => {
-    onUpdateConnection(user.id, 'connected');
+  // Add this function to handle messaging
+  const handleMessage = () => {
+    // Store the user info in localStorage to access it in Messages component
+    localStorage.setItem('messageUser', JSON.stringify({
+      user_id: user.id,
+      name: user.name,
+      profile_picture: user.profile_picture,
+      connection_status: user.connection_status
+    }));
+
+    // Navigate to messages page
+    navigate('/messages');
   };
 
-  const handleReject = () => {
-    onUpdateConnection(user.id, 'none');
+  // Add the missing handleConnectionAction function
+  const handleConnectionAction = (userId: string, status: string) => {
+    if (status === 'connected') {
+      // If already connected, disconnect
+      onUpdateConnection(userId, 'none');
+    } else if (status === 'pending-received') {
+      // If pending request received, accept it
+      onUpdateConnection(userId, 'connected');
+    } else if (status === 'pending-sent') {
+      // If pending request sent, cancel it
+      onUpdateConnection(userId, 'none');
+    } else {
+      // If not connected, send connection request
+      onUpdateConnection(userId, 'pending');
+    }
   };
 
-  const handleDisconnect = () => {
-    onUpdateConnection(user.id, 'none');
-  };
-
+  // In the return JSX, add a message button next to the connect button
   return (
     <div className="glass-card rounded-xl p-4 animate-fade-in">
+      {/* User info section */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <Avatar>
-            <AvatarImage src={user.avatar} />
-            <AvatarFallback>{user.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+          <Avatar className="h-12 w-12 border">
+            <AvatarImage src={getProfilePictureUrl(user.profile_picture)} alt={user.name} />
+            <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
           </Avatar>
           <div>
             <h3 className="font-medium">{user.name}</h3>
-            <p className="text-xs text-muted-foreground">
-              {user.department} • {user.role === 'faculty' ? 'Faculty' : user.role === 'alumni' ? `Alumni (${user.batch})` : `Student (${user.batch})`}
+            <p className="text-sm text-muted-foreground">
+              {user.branch}, {user.college} {user.batch ? `(${user.batch})` : ''}
             </p>
           </div>
         </div>
-        
-        <div>
-          {user.connection === 'none' && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="rounded-full gap-1"
-              onClick={handleConnect}
+
+        <div className="flex gap-2">
+          {/* Only show message button if connected */}
+          {user.connection_status === 'connected' && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-1"
+              onClick={handleMessage}
             >
-              <UserPlus className="w-3 h-3" />
-              <span>Connect</span>
+              <MessageSquare className="h-4 w-4" />
+              <span className="hidden sm:inline">Message</span>
             </Button>
           )}
-          
-          {user.connection === 'pending' && (
-            <div className="flex gap-2">
-              <Button 
-                variant="default" 
-                size="sm" 
-                className="rounded-full"
-                onClick={handleAccept}
-              >
-                <UserCheck className="w-3 h-3" />
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="rounded-full"
-                onClick={handleReject}
-              >
-                <UserX className="w-3 h-3" />
-              </Button>
-            </div>
-          )}
-          
-          {user.connection === 'connected' && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={handleDisconnect}
-            >
-              Message
-            </Button>
-          )}
+
+          {/* Existing connect/accept buttons */}
+          <Button
+            variant={user.connection_status === 'connected' ? 'outline' : 'default'}
+            size="sm"
+            className="flex items-center gap-1"
+            onClick={() => handleConnectionAction(user.id, user.connection_status)}
+          >
+            {user.connection_status === 'connected' ? (
+              <UserCheck className="h-4 w-4" />
+            ) : user.connection_status === 'pending-received' ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <UserPlus className="h-4 w-4" />
+            )}
+            <span>{getConnectionButtonText(user.connection_status)}</span>
+          </Button>
         </div>
       </div>
     </div>
@@ -171,21 +147,126 @@ const NetworkUserCard = ({ user, onUpdateConnection }: {
 
 const Network = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [users, setUsers] = useState(NETWORK_USERS);
+  const [users, setUsers] = useState<NetworkUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
-  const updateConnectionStatus = (id: string, status: 'connected' | 'pending' | 'none') => {
-    setUsers(prev => prev.map(user => 
-      user.id === id ? { ...user, connection: status } : user
-    ));
+  useEffect(() => {
+    fetchNetworkUsers();
+  }, []);
+
+  // Update the fetchNetworkUsers function to handle errors better
+  const fetchNetworkUsers = async () => {
+    setIsLoading(true);
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        toast({
+          variant: "destructive",
+          title: "Authentication error",
+          description: "You need to be logged in to view your network.",
+        });
+        return;
+      }
+
+      console.log("Fetching network users for userId:", userId);
+
+      // Make sure the server is running and the endpoint exists
+      const response = await fetch(`${API_URL}/api/connections/users/${userId}`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Server response error:", response.status, errorText);
+        throw new Error(`Server responded with ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log("Network users data:", data);
+      setUsers(data.users || []);
+    } catch (error) {
+      console.error("Error fetching network users:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load network users. Please try again.",
+      });
+      // Set empty array to avoid undefined errors
+      setUsers([]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const connectionCount = users.filter(user => user.connection === 'connected').length;
-  const pendingCount = users.filter(user => user.connection === 'pending').length;
+  const updateConnectionStatus = async (targetUserId: string, status: 'connected' | 'pending' | 'none') => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        toast({
+          variant: "destructive",
+          title: "Authentication error",
+          description: "You need to be logged in to update connections.",
+        });
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/api/connections/update`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': localStorage.getItem('token') || '',
+        },
+        body: JSON.stringify({
+          userId,
+          targetUserId,
+          status,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update connection');
+      }
+
+      // Update local state
+      setUsers(prev => prev.map(user =>
+        user.id === targetUserId ? { ...user, connection_status: status } : user
+      ));
+
+      // Show success message
+      toast({
+        title: "Connection updated",
+        description: status === 'connected'
+          ? "Connection accepted successfully"
+          : status === 'pending'
+            ? "Connection request sent"
+            : "Connection removed",
+      });
+    } catch (error) {
+      console.error("Error updating connection:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update connection. Please try again.",
+      });
+    }
+  };
+
+  // Filter users based on search query
+  const filteredUsers = users.filter(user =>
+    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.branch?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.college?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Get connections, pending requests, and suggestions
+  const connections = filteredUsers.filter(user => user.connection_status === 'connected');
+  const pendingSentRequests = filteredUsers.filter(user => user.connection_status === 'pending-sent');
+  const pendingReceivedRequests = filteredUsers.filter(user => user.connection_status === 'pending-received');
+  const suggestions = filteredUsers.filter(user => user.connection_status === 'none');
 
   return (
     <div className="page-transition pb-20 md:pb-0">
       <h1 className="text-2xl md:text-3xl font-bold mb-6">Network</h1>
-      
+
       <div className="relative mb-6">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
         <Input
@@ -196,51 +277,97 @@ const Network = () => {
           onChange={(e) => setSearchQuery(e.target.value)}
         />
       </div>
-      
+
       <Tabs defaultValue="connections">
-        <TabsList className="grid grid-cols-3 mb-6">
+        <TabsList className="grid grid-cols-4 mb-6">
           <TabsTrigger value="connections" className="flex items-center gap-2">
             <UserCheck className="h-4 w-4" />
-            <span>Connections ({connectionCount})</span>
+            <span>Connections ({connections.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="pending" className="flex items-center gap-2">
+          <TabsTrigger value="received" className="flex items-center gap-2">
             <UserPlus className="h-4 w-4" />
-            <span>Pending ({pendingCount})</span>
+            <span>Received ({pendingReceivedRequests.length})</span>
+          </TabsTrigger>
+          <TabsTrigger value="sent" className="flex items-center gap-2">
+            <UserPlus className="h-4 w-4" />
+            <span>Sent ({pendingSentRequests.length})</span>
           </TabsTrigger>
           <TabsTrigger value="suggestions" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            <span>Suggestions</span>
+            <span>Suggestions ({suggestions.length})</span>
           </TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="connections" className="space-y-4">
-          {users.filter(user => user.connection === 'connected').map(user => (
-            <NetworkUserCard 
-              key={user.id} 
-              user={user} 
-              onUpdateConnection={updateConnectionStatus} 
-            />
-          ))}
+          {isLoading ? (
+            <div className="text-center py-8">Loading connections...</div>
+          ) : connections.length > 0 ? (
+            connections.map(user => (
+              <NetworkUserCard
+                key={user.id}
+                user={user}
+                onUpdateConnection={updateConnectionStatus}
+              />
+            ))
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              You don't have any connections yet. Check out the suggestions tab to connect with people.
+            </div>
+          )}
         </TabsContent>
-        
-        <TabsContent value="pending" className="space-y-4">
-          {users.filter(user => user.connection === 'pending').map(user => (
-            <NetworkUserCard 
-              key={user.id} 
-              user={user} 
-              onUpdateConnection={updateConnectionStatus} 
-            />
-          ))}
+
+        <TabsContent value="received" className="space-y-4">
+          {isLoading ? (
+            <div className="text-center py-8">Loading received requests...</div>
+          ) : pendingReceivedRequests.length > 0 ? (
+            pendingReceivedRequests.map(user => (
+              <NetworkUserCard
+                key={user.id}
+                user={user}
+                onUpdateConnection={updateConnectionStatus}
+              />
+            ))
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No pending connection requests received.
+            </div>
+          )}
         </TabsContent>
-        
+
+        <TabsContent value="sent" className="space-y-4">
+          {isLoading ? (
+            <div className="text-center py-8">Loading sent requests...</div>
+          ) : pendingSentRequests.length > 0 ? (
+            pendingSentRequests.map(user => (
+              <NetworkUserCard
+                key={user.id}
+                user={user}
+                onUpdateConnection={updateConnectionStatus}
+              />
+            ))
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No pending connection requests sent.
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent value="suggestions" className="space-y-4">
-          {users.filter(user => user.connection === 'none').map(user => (
-            <NetworkUserCard 
-              key={user.id} 
-              user={user} 
-              onUpdateConnection={updateConnectionStatus} 
-            />
-          ))}
+          {isLoading ? (
+            <div className="text-center py-8">Loading suggestions...</div>
+          ) : suggestions.length > 0 ? (
+            suggestions.map(user => (
+              <NetworkUserCard
+                key={user.id}
+                user={user}
+                onUpdateConnection={updateConnectionStatus}
+              />
+            ))
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No suggestions available at the moment.
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

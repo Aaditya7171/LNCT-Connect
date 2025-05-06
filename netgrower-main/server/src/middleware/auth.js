@@ -1,24 +1,30 @@
 const jwt = require('jsonwebtoken');
+const jwtConfig = require('../config/jwt');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+module.exports = function (req, res, next) {
+    // Get token from header (support both formats)
+    const token = req.header('x-auth-token') || req.header('Authorization')?.replace('Bearer ', '');
 
-module.exports = function(req, res, next) {
-  // Get token from header
-  const token = req.header('x-auth-token');
+    // Check if no token
+    if (!token) {
+        console.log('Auth middleware: No token provided');
+        return res.status(401).json({ message: 'No token, authorization denied' });
+    }
 
-  // Check if no token
-  if (!token) {
-    return res.status(401).json({ msg: 'No token, authorization denied' });
-  }
+    try {
+        // Verify token using the central JWT secret
+        const decoded = jwt.verify(token, jwtConfig.secret);
 
-  try {
-    // Verify token
-    const decoded = jwt.verify(token, JWT_SECRET);
+        // Add user from payload - handle both formats
+        req.user = decoded;
 
-    // Add user from payload
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(401).json({ msg: 'Token is not valid' });
-  }
+        // Ensure userId is available in a consistent format
+        req.user.userId = decoded.userId || decoded.id || (decoded.user && decoded.user.id);
+
+        console.log(`Auth middleware: Token valid for user ID ${req.user.userId}`);
+        next();
+    } catch (err) {
+        console.error('Auth middleware: Token verification failed', err.message);
+        res.status(401).json({ message: 'Token is not valid' });
+    }
 };

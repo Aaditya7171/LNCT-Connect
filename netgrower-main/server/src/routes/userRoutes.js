@@ -44,7 +44,7 @@ const upload = multer({
 });
 
 // JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+const JWT_SECRET = process.env.JWT_SECRET || '992f26e6d5a978bc559892942aeb66d573c4c38877823f64f104c925784f73a6';
 
 // Register a new user
 router.post('/register', async (req, res) => {
@@ -75,7 +75,7 @@ router.post('/register', async (req, res) => {
 
     // Create JWT token
     const token = jwt.sign(
-      { id: newUser.rows[0].id },
+      { userId: newUser.rows[0].id },  // Change from id to userId for consistency
       JWT_SECRET,
       { expiresIn: '1d' }
     );
@@ -122,7 +122,7 @@ router.post('/login', async (req, res) => {
 
     // Create JWT token
     const token = jwt.sign(
-      { id: user.id },
+      { userId: user.id },  // Change from id to userId for consistency
       JWT_SECRET,
       { expiresIn: '1d' }
     );

@@ -1,6 +1,6 @@
-
+import { checkUserExists, loginUser, registerUser } from '@/services/api/auth';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,6 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { FiMail, FiLock, FiUser, FiArrowRight } from 'react-icons/fi';
-import { checkUserExists, loginUser, registerUser } from '@/services/api';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Form validation schemas
@@ -32,11 +31,15 @@ const Auth = () => {
   const [activeTab, setActiveTab] = useState<string>("login");
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnUrl = location.state?.returnUrl || '/';
 
-  // Check if user is already logged in
+  // Fix the premature redirection issue
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
+    const userId = localStorage.getItem('userId');
+    // Only redirect if both token and userId exist
+    if (token && userId) {
       navigate('/');
     }
   }, [navigate]);
@@ -59,36 +62,43 @@ const Auth = () => {
     mode: "onChange",
   });
 
+  // Update the onLoginSubmit function to handle the response correctly
   const onLoginSubmit = async (values: z.infer<typeof loginSchema>) => {
-    setLoading(true);
-    try {
-      const response = await loginUser({
-        email: values.email,
-        password: values.password,
-      });
-
-      // Store user data in localStorage
-      if (response.data && response.data.token) {
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('userId', response.data.user.id);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+      setLoading(true);
+      try {
+        const response = await loginUser({
+          email: values.email,
+          password: values.password,
+        });
+  
+        console.log("Login response:", response);
+  
+        // Check if response exists and has token
+        if (response && response.token) {
+          // Don't set localStorage here as it's already done in loginUser
+          
+          toast({
+            title: "Login successful!",
+            description: "You have been logged in successfully.",
+          });
+  
+          // Redirect to the return URL or home page
+          navigate(returnUrl);
+        } else {
+          // Handle case where token is missing in response
+          throw new Error("Authentication failed - no token received");
+        }
+      } catch (error: any) {
+        console.error("Login error details:", error);
+        toast({
+          variant: "destructive",
+          title: "Login failed",
+          description: error.message || "Invalid email or password. Please try again.",
+        });
+      } finally {
+        setLoading(false);
       }
-
-      toast({
-        title: "Welcome back!",
-        description: "You've successfully logged in.",
-      });
-      navigate('/');
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Login failed",
-        description: error.response?.data?.message || "An error occurred during login. Please try again.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
   const onSignupSubmit = async (values: z.infer<typeof signupSchema>) => {
     console.log("Form values submitted:", values);
@@ -147,8 +157,8 @@ const Auth = () => {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50">
-      <div className="hidden lg:flex lg:w-1/2 bg-cover bg-center" 
-           style={{ backgroundImage: "url('https://images.unsplash.com/photo-1541339907198-e08756dedf3f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80')" }}>
+      <div className="hidden lg:flex lg:w-1/2 bg-cover bg-center"
+        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1541339907198-e08756dedf3f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80')" }}>
         <div className="flex flex-col justify-center items-start p-12 bg-black bg-opacity-40 w-full h-full text-white">
           <h1 className="text-4xl font-bold mb-4">LNCT Connect</h1>
           <p className="text-xl mb-8">Join the community of LNCT students and alumni</p>
@@ -166,7 +176,7 @@ const Auth = () => {
           </div>
         </div>
       </div>
-      
+
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <Card className="w-full max-w-md border-none shadow-lg">
           <CardHeader className="text-center">
@@ -180,14 +190,14 @@ const Auth = () => {
               Your platform to connect with LNCT community
             </CardDescription>
           </CardHeader>
-          
+
           <CardContent>
             <Tabs defaultValue="login" value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6">
                 <TabsTrigger value="login">Login</TabsTrigger>
                 <TabsTrigger value="signup">Sign Up</TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="login">
                 <Form {...loginForm}>
                   <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
@@ -224,13 +234,13 @@ const Auth = () => {
                       )}
                     />
                     <Button type="submit" className="w-full" disabled={loading}>
-                      {loading ? 'Signing in...' : 'Sign in'} 
+                      {loading ? 'Signing in...' : 'Sign in'}
                       {!loading && <FiArrowRight className="ml-2" />}
                     </Button>
                   </form>
                 </Form>
               </TabsContent>
-              
+
               <TabsContent value="signup">
                 <Form {...signupForm}>
                   <form onSubmit={signupForm.handleSubmit(onSignupSubmit)} className="space-y-4">
@@ -308,7 +318,7 @@ const Auth = () => {
               </TabsContent>
             </Tabs>
           </CardContent>
-          
+
           <CardFooter className="flex flex-col space-y-4 border-t pt-4">
             <div className="text-sm text-center text-muted-foreground">
               By continuing, you agree to our Terms of Service and Privacy Policy.

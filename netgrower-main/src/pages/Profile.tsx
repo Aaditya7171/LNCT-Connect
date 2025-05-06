@@ -1,14 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { API_URL } from '@/services/api';
+import { API_URL } from '@/services/api/client';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mail, Calendar, Briefcase, GitBranch, LinkIcon, Edit, Bug, LogOut, X } from 'lucide-react';
+import { Mail, Calendar, Briefcase, GitBranch, LinkIcon, Edit, Bug, LogOut, X, MessageSquare } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { ProfileEdit } from '@/components/profile/ProfileEdit';
-import { getProfile, updateProfile, debugProfileData, logoutUser } from '@/services/api';
+import { getProfile, updateProfile, debugProfileData } from '@/services/api';
+import { logoutUser } from '@/services/api/auth';
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 const Profile = () => {
@@ -40,36 +41,50 @@ const Profile = () => {
     }
   }, []);
 
-  // Update the fetchUserProfile function to handle the full URL for profile pictures
+  // Update the fetchUserProfile function to properly handle null values
+  // Update the fetchUserProfile function to prevent redirect loops:
   const fetchUserProfile = async () => {
     setIsLoading(true);
     try {
       const userId = localStorage.getItem('userId');
-      if (!userId) {
-        console.error("No user ID found in localStorage");
+      const token = localStorage.getItem('token');
+  
+      // Log authentication state for debugging
+      console.log("Auth check:", {
+        userId: userId ? "Present" : "Missing",
+        token: token ? "Present" : "Missing",
+        tokenLength: token ? token.length : 0
+      });
+  
+      if (!userId || !token) {
+        console.error("Missing authentication data");
         toast({
           variant: "destructive",
           title: "Authentication error",
-          description: "You need to be logged in to view your profile.",
+          description: "Please log in to view your profile.",
         });
-        navigate('/auth');
+        
+        // Only navigate if we're not already on the auth page
+        if (window.location.pathname !== '/auth') {
+          navigate('/auth');
+        }
         return;
       }
-
+  
       console.log("Fetching profile with user ID:", userId);
       const response = await getProfile(userId);
       console.log("Profile response:", response);
-
+  
       // Make sure we're properly handling the response data
       const userData = response.data?.data || response.data;
-
+  
       if (userData) {
         console.log("User data extracted from response:", userData);
-
+  
         // Force image refresh by adding a timestamp to the URL
         const timestamp = new Date().getTime();
-
-        // Update profile data with the response
+  
+        // Update profile data with the response, handling null values
         const newProfileData = {
           id: userId,
           name: userData.name || '',
@@ -78,72 +93,35 @@ const Profile = () => {
           branch: userData.branch || '',
           batch: userData.batch || '',
           linkedin_url: userData.linkedin_url || '',
-          // Only set profile_picture if it exists in the response
           profile_picture: userData.profile_picture
-            ? `${API_URL}${userData.profile_picture}?t=${timestamp}`
-            : null, // Set to null instead of default image
+            ? `${API_URL}${userData.profile_picture.startsWith('/') ? '' : '/'}${userData.profile_picture}?t=${timestamp}`
+            : `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name || 'User')}&background=random&color=fff&size=128`,
           coverImage: 'https://images.unsplash.com/photo-1557683311-eac922347aa1?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=1080&q=80'
         };
-
+  
         console.log("Setting new profile data:", newProfileData);
         setProfileData(newProfileData);
-
-        // Also store the user data in localStorage for persistence
-        localStorage.setItem('user', JSON.stringify(userData));
-      } else {
-        // Try to get user data from localStorage as fallback
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-          const parsedUser = JSON.parse(storedUser);
-          console.log("Using stored user data from localStorage:", parsedUser);
-
-          const newProfileData = {
-            id: userId,
-            name: parsedUser.name || '',
-            email: parsedUser.email || '',
-            college: parsedUser.college || '',
-            branch: parsedUser.branch || '',
-            batch: parsedUser.batch || '',
-            linkedin_url: parsedUser.linkedin_url || '',
-            profile_picture: parsedUser.profile_picture
-              ? `${parsedUser.profile_picture}?t=${new Date().getTime()}`
-              : profileData.profile_picture,
-          };
-        } else {
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Failed to load profile data",
-          });
-        }
       }
     } catch (error) {
       console.error("Error fetching profile:", error);
-
-      // Try to get user data from localStorage as fallback
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        const parsedUser = JSON.parse(storedUser);
-        console.log("Using stored user data from localStorage after error:", parsedUser);
-
-        const newProfileData = {
-          id: localStorage.getItem('userId') || '1',
-          name: parsedUser.name || '',
-          email: parsedUser.email || '',
-          college: parsedUser.college || '',
-          branch: parsedUser.branch || '',
-          batch: parsedUser.batch || '',
-          linkedin_url: parsedUser.linkedin_url || '',
-          profile_picture: parsedUser.profile_picture || 'https://images.unsplash.com/photo-1568602471122-7832951cc4c5?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=870&q=80',
-          coverImage: 'https://images.unsplash.com/photo-1557683311-eac922347aa1?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=1080&q=80'
-        };
-
-        setProfileData(newProfileData);
+  
+      // Check if it's an authentication error
+      if (error.response && error.response.status === 401) {
+        toast({
+          variant: "destructive",
+          title: "Authentication error",
+          description: "Your session has expired. Please log in again.",
+        });
+        
+        // Only navigate if we're not already on the auth page
+        if (window.location.pathname !== '/auth') {
+          navigate('/auth');
+        }
       } else {
         toast({
           variant: "destructive",
-          title: "Error loading profile",
-          description: "There was a problem loading your profile. Please try again.",
+          title: "Error",
+          description: "Failed to load profile data. Please try again.",
         });
       }
     } finally {
@@ -151,15 +129,19 @@ const Profile = () => {
     }
   };
 
-  // In the handleProfileUpdate function:
-
+  // Update the handleProfileUpdate function to properly merge the updated data
   const handleProfileUpdate = (updatedProfile) => {
     console.log("Profile update received in parent component:", updatedProfile);
 
     // Create a new profile data object with the updates
     const newProfileData = {
       ...profileData,
-      ...updatedProfile
+      ...updatedProfile,
+      // Ensure we handle empty strings properly
+      college: updatedProfile.college || '',
+      branch: updatedProfile.branch || '',
+      batch: updatedProfile.batch || '',
+      linkedin_url: updatedProfile.linkedin_url || ''
     };
 
     // Make sure we're using the full URL for the profile picture

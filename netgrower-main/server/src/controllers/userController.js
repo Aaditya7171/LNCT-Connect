@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+const JWT_SECRET = process.env.JWT_SECRET || '992f26e6d5a978bc559892942aeb66d573c4c38877823f64f104c925784f73a6';
 
 // Register a new user
 exports.registerUser = async (req, res) => {
@@ -11,7 +11,7 @@ exports.registerUser = async (req, res) => {
   try {
     // Check if user already exists
     const userCheck = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    
+
     if (userCheck.rows.length > 0) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -55,7 +55,7 @@ exports.loginUser = async (req, res) => {
   try {
     // Check if user exists
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    
+
     if (result.rows.length === 0) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -64,7 +64,7 @@ exports.loginUser = async (req, res) => {
 
     // Validate password
     const isMatch = await bcrypt.compare(password, user.password);
-    
+
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -121,7 +121,7 @@ exports.updateProfile = async (req, res) => {
   try {
     // Check if user exists
     const userCheck = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
-    
+
     if (userCheck.rows.length === 0) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -154,6 +154,121 @@ exports.updateProfile = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating profile:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Update the updateUser function to properly handle all profile fields
+exports.updateUser = async (req, res) => {
+  const userId = req.params.id;
+  const pool = req.app.locals.pool;
+
+  try {
+    // Log the incoming update request
+    console.log('Updating user profile:', {
+      userId,
+      body: req.body
+    });
+
+    // Extract all possible profile fields from the request
+    const { name, email, college, branch, batch, linkedin_url } = req.body;
+
+    // Build the SQL query dynamically based on provided fields
+    let updateFields = [];
+    let queryParams = [];
+    let paramIndex = 1;
+
+    if (name) {
+      updateFields.push(`name = $${paramIndex}`);
+      queryParams.push(name);
+      paramIndex++;
+    }
+
+    if (email) {
+      updateFields.push(`email = $${paramIndex}`);
+      queryParams.push(email);
+      paramIndex++;
+    }
+
+    if (college !== undefined) {
+      updateFields.push(`college = $${paramIndex}`);
+      queryParams.push(college || null); // Allow empty string to be stored as null
+      paramIndex++;
+    }
+
+    if (branch !== undefined) {
+      updateFields.push(`branch = $${paramIndex}`);
+      queryParams.push(branch || null);
+      paramIndex++;
+    }
+
+    if (batch !== undefined) {
+      updateFields.push(`batch = $${paramIndex}`);
+      queryParams.push(batch || null);
+      paramIndex++;
+    }
+
+    if (linkedin_url !== undefined) {
+      updateFields.push(`linkedin_url = $${paramIndex}`);
+      queryParams.push(linkedin_url || null);
+      paramIndex++;
+    }
+
+    // Add userId as the last parameter
+    queryParams.push(userId);
+
+    // If no fields to update, return early
+    if (updateFields.length === 0) {
+      return res.status(400).json({ message: 'No fields to update' });
+    }
+
+    // Construct and execute the query
+    const query = `
+      UPDATE users 
+      SET ${updateFields.join(', ')} 
+      WHERE id = $${paramIndex} 
+      RETURNING id, name, email, profile_picture, college, branch, batch, linkedin_url
+    `;
+
+    console.log('Executing SQL query:', query, 'with params:', queryParams);
+
+    const result = await pool.query(query, queryParams);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    console.log('User updated successfully:', result.rows[0]);
+
+    res.json({ data: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Update the getUser function to return all profile fields
+exports.getUser = async (req, res) => {
+  const userId = req.params.id;
+  const pool = req.app.locals.pool;
+
+  try {
+    // Get user by ID with all profile fields
+    const result = await pool.query(
+      'SELECT id, name, email, profile_picture, college, branch, batch, linkedin_url FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Log the user data being returned
+    console.log('Returning user data:', result.rows[0]);
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error getting user:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
