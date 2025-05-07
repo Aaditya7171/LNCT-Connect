@@ -1,9 +1,9 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+
   /* Light Theme (default) */
   :root {
     --background: 0 0% 100%;
@@ -127,11 +127,11 @@
   .glass-card {
     @apply bg-card/80 backdrop-blur-lg border border-border/50 shadow-sm;
   }
-  
+
   .hover-scale {
     @apply transition-transform duration-300 hover:scale-[1.02];
   }
-  
+
   .navbar-icon {
     @apply relative flex items-center justify-center p-2 rounded-full transition-colors;
   }
@@ -139,22 +139,116 @@
   .navbar-icon.active {
     @apply bg-accent text-accent-foreground;
   }
-  
+
   .skeleton-pulse {
     @apply animate-pulse-slow bg-muted rounded;
   }
-  
+
   .page-transition {
     @apply animate-fade-in;
   }
-  
+
   .focus-ring {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
+
+  /* Enhanced glass card with gradient */
+  .glass-card-gradient {
+    @apply bg-gradient-to-br from-white/90 to-white/70 dark:from-gray-900/90 dark:to-gray-900/70 backdrop-blur-md border border-white/20 dark:border-gray-800/20 shadow-xl;
+  }
+
+  /* Button hover effects */
+  .btn-hover-effect {
+    @apply transition-all duration-300 hover:shadow-lg hover:translate-y-[-2px] active:translate-y-[0px] active:shadow-md;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r;
+  }
+
+  /* Animated card */
+  .animated-card {
+    @apply transition-all duration-300 hover:shadow-xl hover:translate-y-[-4px];
+  }
+
+  /* Home page gradient background */
+  .home-gradient-bg {
+    background: linear-gradient(135deg, rgba(249, 250, 251, 0.9) 0%, rgba(243, 244, 246, 0.9) 100%);
+  }
+
+  .dark .home-gradient-bg {
+    background: linear-gradient(135deg, rgba(17, 24, 39, 0.9) 0%, rgba(31, 41, 55, 0.9) 100%);
   }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* Enhanced animations for purple theme background */
+  @keyframes float {
+    0% {
+      transform: translateY(0px) translateX(0px) scale(1);
+    }
+
+    33% {
+      transform: translateY(-15px) translateX(10px) scale(1.05);
+    }
+
+    66% {
+      transform: translateY(10px) translateX(-15px) scale(0.95);
+    }
+
+    100% {
+      transform: translateY(0px) translateX(0px) scale(1);
+    }
+  }
+
+  @keyframes pulse-slow {
+    0% {
+      opacity: 0.3;
+      filter: saturate(0.8);
+    }
+
+    50% {
+      opacity: 0.7;
+      filter: saturate(1.2);
+    }
+
+    100% {
+      opacity: 0.3;
+      filter: saturate(0.8);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -100% 0;
+    }
+
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .animate-float {
+    animation: float 20s ease-in-out infinite;
+  }
+
+  .animate-pulse-slow {
+    animation: pulse-slow 10s ease-in-out infinite;
+  }
+
+  .animate-shimmer {
+    background: linear-gradient(90deg,
+        rgba(167, 139, 250, 0) 0%,
+        rgba(167, 139, 250, 0.1) 25%,
+        rgba(139, 92, 246, 0.2) 50%,
+        rgba(167, 139, 250, 0.1) 75%,
+        rgba(167, 139, 250, 0) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 8s infinite;
   }
 }

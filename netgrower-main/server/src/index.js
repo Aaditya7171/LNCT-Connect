@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const userRoutes = require('./routes/userRoutes');
 const connectionsRoutes = require('./routes/connections');
 const messageRoutes = require('./routes/messages');
+const forumRoutes = require('./routes/forumRoutes');
 const pool = require('./config/db');
 const setupSocket = require('./socket');
 const jwtConfig = require('./config/jwt');
@@ -40,6 +41,12 @@ if (!fs.existsSync(messageAttachmentsDir)) {
   fs.mkdirSync(messageAttachmentsDir, { recursive: true });
 }
 
+// Create profile pictures directory
+const profileUploadsDir = path.join(__dirname, '../uploads/profile');
+if (!fs.existsSync(profileUploadsDir)) {
+  fs.mkdirSync(profileUploadsDir, { recursive: true });
+}
+
 // Serve static files from the uploads directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/api/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -54,6 +61,7 @@ app.use((req, res, next) => {
 app.use('/api/users', userRoutes);
 app.use('/api/connections', connectionsRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/forum', forumRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -73,7 +81,8 @@ const io = setupSocket(server);
 app.set('io', io);
 
 // Start server
-const PORT = process.env.PORT || 5000;
+const PORT = 5000; // Use port 5000 as requested
+console.log('Starting server on port:', PORT);
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

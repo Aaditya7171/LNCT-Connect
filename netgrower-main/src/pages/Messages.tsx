@@ -22,6 +22,7 @@ interface Contact {
     last_message_time: string;
     unread_count: number;
     connection_status: string | null;
+    is_online?: boolean; // Add online status
 }
 
 interface Message {
@@ -109,7 +110,7 @@ const Messages = () => {
         }
     };
 
-    // Fetch conversations function - now has access to setIsLoading
+    // Fetch all users for Instagram-style messaging
     const fetchConversations = async () => {
         if (!checkAuth()) return;
 
@@ -118,45 +119,49 @@ const Messages = () => {
             const userId = localStorage.getItem('userId');
             if (!userId) return;
 
-            // Get all network connections
+            // Get all users
             const networkResponse = await fetch(`${API_URL}/api/connections/users/${userId}`);
             if (!networkResponse.ok) {
-                throw new Error('Failed to fetch network connections');
+                throw new Error('Failed to fetch users');
             }
 
             const networkData = await networkResponse.json();
-            const connections = networkData.users?.filter(
-                (user: any) => user.connection_status === 'connected'
-            ) || [];
+            const allUsers = networkData.users || [];
 
-            const nonConnections = networkData.users?.filter(
-                (user: any) => user.connection_status !== 'connected'
-            ) || [];
+            // Get active socket connections to determine online status
+            // This is a simplified approach - in a real app, you'd use a presence system
+            const onlineUsers = new Set<string>();
 
-            // Format connections as conversations for the inbox
-            const formattedConnections = connections.map((user: any) => ({
+            // Format all users as potential conversations (Instagram style)
+            const formattedUsers = allUsers.map((user: any) => ({
                 user_id: user.id,
                 name: user.name,
                 profile_picture: user.profile_picture,
                 last_message: '',  // Initially empty
                 last_message_time: new Date().toISOString(),
                 unread_count: 0,
-                connection_status: 'connected'
+                connection_status: user.connection_status,
+                is_online: onlineUsers.has(user.id) // Add online status
             }));
 
-            // Format non-connections as message requests
-            const formattedRequests = nonConnections.map((user: any) => ({
-                user_id: user.id,
-                name: user.name,
-                profile_picture: user.profile_picture,
-                last_message: '',  // Initially empty
-                last_message_time: new Date().toISOString(),
-                unread_count: 0,
-                connection_status: user.connection_status
-            }));
+            // Sort users: first connected users, then others
+            const sortedUsers = formattedUsers.sort((a, b) => {
+                // First sort by connection status
+                if (a.connection_status === 'connected' && b.connection_status !== 'connected') return -1;
+                if (a.connection_status !== 'connected' && b.connection_status === 'connected') return 1;
 
-            setConversations(formattedConnections);
-            setMessageRequests(formattedRequests);
+                // Then sort by online status
+                if (a.is_online && !b.is_online) return -1;
+                if (!a.is_online && b.is_online) return 1;
+
+                // Then sort by name
+                return a.name.localeCompare(b.name);
+            });
+
+            setConversations(sortedUsers);
+
+            // We don't need separate message requests in Instagram style
+            setMessageRequests([]);
 
             // Check if we need to select a contact from localStorage (coming from network page)
             const storedContact = localStorage.getItem('messageUser');
@@ -169,7 +174,8 @@ const Messages = () => {
                     last_message: '',
                     last_message_time: new Date().toISOString(),
                     unread_count: 0,
-                    connection_status: contactData.connection_status
+                    connection_status: contactData.connection_status,
+                    is_online: onlineUsers.has(contactData.user_id)
                 };
                 setSelectedContact(contact);
 
@@ -180,10 +186,10 @@ const Messages = () => {
                 fetchMessages(userId, contactData.user_id);
             }
         } catch (error) {
-            console.error('Error fetching conversations:', error);
+            console.error('Error fetching users:', error);
             toast({
                 variant: "destructive",
-                title: "Failed to load conversations",
+                title: "Failed to load users",
                 description: "Please try again later.",
             });
         } finally {
@@ -198,15 +204,16 @@ const Messages = () => {
             if (!userId) return;
 
             // Use the getMessageRequests function from your API service
-            const data = await getMessageRequests(userId);
+            const response = await getMessageRequests(userId);
+            console.log('Message requests response:', response);
 
-            if (Array.isArray(data)) {
+            if (response && response.requests && Array.isArray(response.requests)) {
                 // Transform API response to match your Contact interface
                 const requestsData = await Promise.all(
-                    data.map(async (req) => {
+                    response.requests.map(async (req) => {
                         try {
                             // Fetch user details for this request
-                            const userInfo = await fetchUserInfo(req.sender_id);
+                            const userInfo = await fetchUserInfo(req.user_id);
                             return {
                                 ...userInfo,
                                 last_message: req.last_message || '',
@@ -215,7 +222,7 @@ const Messages = () => {
                                 connection_status: 'pending'
                             };
                         } catch (error) {
-                            console.error(`Error fetching user ${req.sender_id}:`, error);
+                            console.error(`Error fetching user ${req.user_id}:`, error);
                             return null;
                         }
                     })
@@ -230,27 +237,91 @@ const Messages = () => {
     };
 
     // Fetch messages
-    const fetchMessages = async (otherUserId: string) => {
+    const fetchMessages = async (userId: string, otherUserId?: string) => {
         try {
-            const userId = localStorage.getItem('userId');
-            if (!userId) return;
+            // If otherUserId is not provided, use the selectedContact
+            const targetUserId = otherUserId || (selectedContact?.user_id);
+            if (!userId || !targetUserId) {
+                console.warn('Missing user IDs for fetchMessages');
+                return;
+            }
 
             setIsLoading(true);
 
             // Get messages between the current user and the selected contact
-            const messagesData = await getMessages(userId, otherUserId);
+            console.log(`Fetching messages between ${userId} and ${targetUserId}`);
 
-            if (Array.isArray(messagesData)) {
-                setMessages(messagesData);
+            // Make direct API call to ensure we get the latest data
+            const token = localStorage.getItem('token');
+            if (!token) {
+                console.error('No authentication token found');
+                setIsLoading(false);
+                return;
+            }
 
-                // Mark messages as read
-                await markMessagesAsRead(userId, otherUserId);
+            try {
+                // Make a direct API call to get messages
+                const response = await fetch(`${API_URL}/api/messages/${userId}/${targetUserId}`, {
+                    headers: {
+                        'x-auth-token': token,
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('Direct API messages response:', data);
+
+                if (data && data.messages && Array.isArray(data.messages)) {
+                    // Sort messages by created_at timestamp to ensure proper order
+                    const sortedMessages = [...data.messages].sort((a, b) =>
+                        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                    );
+
+                    console.log('Sorted messages:', sortedMessages);
+                    setMessages(sortedMessages);
+
+                    // Mark messages as read
+                    await markMessagesAsRead(userId, targetUserId);
+                } else {
+                    console.warn('Messages data is not in expected format:', data);
+                    setMessages([]);
+                }
+            } catch (apiError) {
+                console.error('Error in direct API call:', apiError);
+
+                // Fall back to using the service function
+                const messagesData = await getMessages(userId, targetUserId);
+                console.log('Fallback messages data:', messagesData);
+
+                if (messagesData && messagesData.messages && Array.isArray(messagesData.messages)) {
+                    // Sort messages by created_at timestamp to ensure proper order
+                    const sortedMessages = [...messagesData.messages].sort((a, b) =>
+                        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                    );
+
+                    setMessages(sortedMessages);
+
+                    // Mark messages as read
+                    await markMessagesAsRead(userId, targetUserId);
+                } else {
+                    console.warn('Fallback messages data is not in expected format:', messagesData);
+                    setMessages([]);
+                }
             }
 
             setIsLoading(false);
         } catch (error) {
             console.error('Error fetching messages:', error);
             setIsLoading(false);
+            toast({
+                variant: "destructive",
+                title: "Failed to load messages",
+                description: "Please try again later.",
+            });
         }
     };
 
@@ -264,222 +335,300 @@ const Messages = () => {
 
             // Set up socket connection for real-time messaging
             socketService.connect();
-
-            // Listen for new messages
-            socketService.onNewMessage((data) => {
-                if (selectedContact && data.from === selectedContact.user_id) {
-                    // Add the new message to the current conversation
-                    setMessages(prev => [...prev, {
-                        id: `socket-${Date.now()}`,
-                        sender_id: data.from,
-                        receiver_id: localStorage.getItem('userId') || '',
-                        content: data.message,
-                        attachment_url: data.attachmentUrl,
-                        message_type: data.messageType || 'text',
-                        is_read: false,
-                        created_at: new Date().toISOString()
-                    }]);
-
-                    // Mark the message as read since we're in the conversation
-                    const userId = localStorage.getItem('userId');
-                    if (userId) {
-                        markMessagesAsRead(userId, data.from);
-                    }
-                }
-
-                // Refresh conversations to show the new message
-                fetchConversations();
-            });
         }
 
         return () => {
             // Clean up socket connection
             socketService.disconnect();
         };
-    }, [navigate, selectedContact]);
+    }, [navigate]);
 
-    // Replace the useEffect that sets up the socket connection with this improved version
+    // Fetch messages when a contact is selected
     useEffect(() => {
-      if (!isAuthenticated) return;
+        if (selectedContact && isAuthenticated) {
+            const userId = localStorage.getItem('userId');
+            if (userId) {
+                fetchMessages(userId, selectedContact.user_id);
+            }
+        }
+    }, [selectedContact, isAuthenticated]);
 
-      // Clean up any existing socket connection
-      if (socketInstance) {
-        socketInstance.disconnect();
-        setSocketInstance(null);
-      }
+    // Set up socket connection for real-time messaging
+    useEffect(() => {
+        if (!isAuthenticated) return;
 
-      const token = localStorage.getItem('token');
-      const userId = localStorage.getItem('userId');
-
-      if (!token || !userId) {
-        console.error('Missing token or userId for socket connection');
-        return;
-      }
-
-      console.log('Initializing socket connection...');
-
-      // Create socket with proper auth
-      const socket = io(API_URL, {
-        auth: { token },
-        query: { userId },
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-        timeout: 20000
-      });
-
-      setSocketInstance(socket);
-
-      socket.on('connect', () => {
-        console.log('Socket connected successfully');
-        
-        // Join user's room to receive messages
-        socket.emit('join', userId);
-        console.log(`Joining room: ${userId}`);
-      });
-
-      socket.on('welcome', (data) => {
-        console.log('Received welcome message:', data);
-      });
-
-      socket.on('private-message', (message) => {
-        console.log('New message received:', message);
-
-        // Update messages if from current contact
-        if (selectedContact &&
-            (message.sender_id === selectedContact.user_id ||
-             message.receiver_id === selectedContact.user_id)) {
-          setMessages(prev => [...prev, message]);
+        // Clean up any existing socket connection
+        if (socketInstance) {
+            socketInstance.disconnect();
+            setSocketInstance(null);
         }
 
-        // Update conversations list with new message
-        updateConversationWithMessage(message);
-      });
+        const token = localStorage.getItem('token');
+        const userId = localStorage.getItem('userId');
 
-      socket.on('message-sent', (message) => {
-        console.log('Message sent confirmation:', message);
-      });
+        if (!token || !userId) {
+            console.error('Missing token or userId for socket connection');
+            return;
+        }
 
-      socket.on('error', (error) => {
-        console.error('Socket error:', error);
-        toast({
-          variant: "destructive",
-          title: "Messaging error",
-          description: error.message || "There was an error with the messaging service",
+        console.log('Initializing socket connection...');
+
+        // Create socket with proper auth
+        const socket = io(API_URL, {
+            auth: { token },
+            query: { userId },
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            timeout: 20000
         });
-      });
 
-      // Set up a ping interval to keep the connection alive
-      const pingInterval = setInterval(() => {
-        if (socket.connected) {
-          socket.emit('ping');
-        }
-      }, 30000);
+        setSocketInstance(socket);
 
-      socket.on('disconnect', (reason) => {
-        console.log('Socket disconnected, reason:', reason);
-      });
+        socket.on('connect', () => {
+            console.log('Socket connected successfully');
 
-      socket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error.message);
-      });
+            // Join user's room to receive messages
+            socket.emit('join', { room: userId });
+            console.log(`Joining room: ${userId}`);
+        });
 
-      return () => {
-        console.log('Cleaning up socket connection...');
-        clearInterval(pingInterval);
-        socket.disconnect();
-      };
+        // Listen for both event names for compatibility
+        const handleNewMessage = async (message: any) => {
+            console.log('New message received:', message);
+
+            // If the message is from the current user, make sure we have the profile picture
+            if (message.sender_id === userId) {
+                // Ensure we have the current user's profile picture in localStorage
+                const userProfilePic = localStorage.getItem('userProfilePic');
+                const userData = localStorage.getItem('user');
+
+                if (!userProfilePic && userData) {
+                    try {
+                        const user = JSON.parse(userData);
+                        if (user.profile_picture) {
+                            localStorage.setItem('userProfilePic', user.profile_picture);
+                            console.log('Updated userProfilePic in localStorage from user data');
+                        }
+                    } catch (e) {
+                        console.error('Error parsing user data:', e);
+                    }
+                }
+            }
+
+            // Always update messages if from current contact, regardless of who sent it
+            if (selectedContact &&
+                ((message.sender_id === selectedContact.user_id && message.receiver_id === userId) ||
+                    (message.sender_id === userId && message.receiver_id === selectedContact.user_id))) {
+
+                // Check if message already exists to prevent duplicates
+                setMessages(prev => {
+                    // Check if this message ID already exists in our messages
+                    const messageExists = prev.some(m =>
+                        m.id === message.id ||
+                        (m.content === message.content &&
+                            m.sender_id === message.sender_id &&
+                            m.receiver_id === message.receiver_id &&
+                            Math.abs(new Date(m.created_at).getTime() - new Date(message.created_at).getTime()) < 5000) // Within 5 seconds
+                    );
+
+                    if (messageExists) {
+                        return prev; // Don't add duplicate message
+                    }
+
+                    // Sort messages by timestamp to ensure proper order
+                    const updatedMessages = [...prev, message].sort((a, b) =>
+                        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                    );
+
+                    return updatedMessages;
+                });
+
+                // Mark as read if we're the receiver
+                if (message.sender_id === selectedContact.user_id && message.receiver_id === userId) {
+                    markMessagesAsRead(userId, selectedContact.user_id);
+                }
+            } else {
+                // If we receive a message from someone we're not currently chatting with,
+                // update the UI to show there's a new message
+                console.log('Message from user not in current chat:', message.sender_id);
+
+                // Refresh the conversations list to show the new message indicator
+                fetchConversations();
+            }
+
+            // Update conversations list with new message
+            updateConversationWithMessage(message);
+        };
+
+        // Only listen to one event to prevent duplicates
+        socket.on('private-message', handleNewMessage);
+
+        socket.on('message-sent', (message) => {
+            console.log('Message sent confirmation:', message);
+        });
+
+        socket.on('error', (error) => {
+            console.error('Socket error:', error);
+            toast({
+                variant: "destructive",
+                title: "Messaging error",
+                description: error.message || "There was an error with the messaging service",
+            });
+        });
+
+        // Set up a ping interval to keep the connection alive
+        const pingInterval = setInterval(() => {
+            if (socket.connected) {
+                socket.emit('ping');
+            }
+        }, 30000);
+
+        socket.on('disconnect', (reason) => {
+            console.log('Socket disconnected, reason:', reason);
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('Socket connection error:', error.message);
+        });
+
+        // Clean up function
+        return () => {
+            console.log('Cleaning up socket connection...');
+            clearInterval(pingInterval);
+            socket.off('private-message', handleNewMessage);
+            socket.off('new_message', handleNewMessage);
+            socket.disconnect();
+        };
     }, [isAuthenticated, selectedContact?.user_id]); // Include selectedContact to update listeners when it changes
 
     // Update the handleSendMessage function to use the socket for sending messages
     const handleSendMessage = async () => {
-      if ((!newMessage.trim() && !attachment) || !selectedContact) return;
+        if ((!newMessage.trim() && !attachment) || !selectedContact) return;
 
-      try {
-        const userId = localStorage.getItem('userId');
-        const token = localStorage.getItem('token');
-        
-        if (!userId || !token) {
-          toast({
-            variant: "destructive",
-            title: "Authentication error",
-            description: "Please log in again.",
-          });
-          navigate('/auth', { state: { returnUrl: '/messages' } });
-          return;
+        try {
+            const userId = localStorage.getItem('userId');
+            const token = localStorage.getItem('token');
+
+            if (!userId || !token) {
+                toast({
+                    variant: "destructive",
+                    title: "Authentication error",
+                    description: "Please log in again.",
+                });
+                navigate('/auth', { state: { returnUrl: '/messages' } });
+                return;
+            }
+
+            // Add message to UI immediately for better UX
+            const tempMessage: Message = {
+                id: `temp-${Date.now()}`,
+                sender_id: userId,
+                receiver_id: selectedContact.user_id,
+                content: newMessage,
+                attachment_url: attachment ? URL.createObjectURL(attachment) : null,
+                message_type: attachment ? determineMessageType(attachment) : 'text',
+                is_read: false,
+                created_at: new Date().toISOString(),
+            };
+
+            // Add to messages and ensure they're sorted by timestamp
+            setMessages(prev => {
+                // Check if message already exists to prevent duplicates
+                const messageExists = prev.some(m =>
+                    m.id === tempMessage.id ||
+                    (m.content === tempMessage.content &&
+                        m.sender_id === tempMessage.sender_id &&
+                        m.receiver_id === tempMessage.receiver_id)
+                );
+
+                if (messageExists) {
+                    return prev; // Don't add duplicate message
+                }
+
+                const updatedMessages = [...prev, tempMessage].sort((a, b) =>
+                    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
+                return updatedMessages;
+            });
+
+            // Clear input fields
+            setNewMessage('');
+            setAttachment(null);
+            setShowAttachmentPreview(false);
+
+            console.log('Sending message with data:', {
+                sender_id: userId,
+                receiver_id: selectedContact.user_id,
+                content: newMessage.substring(0, 20) + (newMessage.length > 20 ? '...' : ''),
+                hasAttachment: !!attachment
+            });
+
+            // Always use the API to ensure messages are stored in the database
+            // Create a new message object
+            const messageData = new FormData();
+            messageData.append('sender_id', userId);
+            messageData.append('receiver_id', selectedContact.user_id);
+            messageData.append('content', newMessage);
+            messageData.append('message_type', attachment ? determineMessageType(attachment) : 'text');
+
+            console.log('Sending message with data:', {
+                sender_id: userId,
+                receiver_id: selectedContact.user_id,
+                content: newMessage,
+                message_type: attachment ? determineMessageType(attachment) : 'text',
+                hasAttachment: !!attachment
+            });
+
+            // Add attachment if present
+            if (attachment) {
+                messageData.append('attachment', attachment);
+            }
+
+            // Send message to server via API
+            try {
+                console.log('Sending message via API...');
+                const response = await sendMessage(messageData);
+                console.log('Message sent successfully:', response);
+
+                // Update the conversation list with the new message
+                updateConversationWithMessage({
+                    ...tempMessage,
+                    id: response.id || tempMessage.id,
+                    created_at: response.created_at || tempMessage.created_at,
+                    attachment_url: response.attachment_url || tempMessage.attachment_url
+                });
+
+                // Also emit via socket for real-time updates if connected
+                if (socketInstance && socketInstance.connected) {
+                    socketInstance.emit('private-message', {
+                        to: selectedContact.user_id,
+                        message: newMessage,
+                        attachmentUrl: attachment ? URL.createObjectURL(attachment) : null,
+                        messageType: attachment ? determineMessageType(attachment) : 'text'
+                    });
+                }
+            } catch (error) {
+                console.error('Error sending message via API:', error);
+                toast({
+                    variant: "destructive",
+                    title: "Error sending message",
+                    description: "Failed to send your message. Please try again.",
+                });
+            }
+
+            // Refresh messages to get the actual message from the server
+            fetchMessages(userId, selectedContact.user_id);
+
+        } catch (error) {
+            console.error('Error sending message:', error);
+            toast({
+                variant: "destructive",
+                title: "Error sending message",
+                description: "Failed to send your message. Please try again.",
+            });
         }
-
-        // Add message to UI immediately for better UX
-        const tempMessage: Message = {
-          id: `temp-${Date.now()}`,
-          sender_id: userId,
-          receiver_id: selectedContact.user_id,
-          content: newMessage,
-          attachment_url: attachment ? URL.createObjectURL(attachment) : null,
-          message_type: attachment ? determineMessageType(attachment) : 'text',
-          is_read: false,
-          created_at: new Date().toISOString(),
-        };
-
-        setMessages(prev => [...prev, tempMessage]);
-
-        // Clear input fields
-        setNewMessage('');
-        setAttachment(null);
-        setShowAttachmentPreview(false);
-
-        console.log('Sending message with data:', {
-          sender_id: userId,
-          receiver_id: selectedContact.user_id,
-          content: newMessage.substring(0, 20) + (newMessage.length > 20 ? '...' : ''),
-          hasAttachment: !!attachment
-        });
-
-        // Try to send via socket first if connected
-        if (socketInstance && socketInstance.connected) {
-          socketInstance.emit('private-message', {
-            to: selectedContact.user_id,
-            message: newMessage,
-            attachmentUrl: null, // We'll handle attachments via API
-            messageType: 'text'
-          });
-        }
-
-        // If we have an attachment, or as a fallback, use the API
-        if (attachment) {
-          // Create a new message object
-          const messageData = new FormData();
-          messageData.append('sender_id', userId);
-          messageData.append('receiver_id', selectedContact.user_id);
-          messageData.append('content', newMessage);
-          messageData.append('attachment', attachment);
-          messageData.append('message_type', determineMessageType(attachment));
-
-          // Send message to server via API
-          const response = await sendMessage(messageData);
-          console.log('Message with attachment sent successfully:', response);
-
-          // Update the conversation list with the new message
-          updateConversationWithMessage({
-            ...tempMessage,
-            id: response.id || tempMessage.id,
-            created_at: response.created_at || tempMessage.created_at,
-            attachment_url: response.attachment_url || tempMessage.attachment_url
-          });
-        }
-
-        // Refresh messages to get the actual message from the server
-        fetchMessages(selectedContact.user_id);
-
-      } catch (error) {
-        console.error('Error sending message:', error);
-        toast({
-          variant: "destructive",
-          title: "Error sending message",
-          description: "Failed to send your message. Please try again.",
-        });
-      }
     };
 
     // Helper function to determine message type based on file extension
@@ -497,27 +646,77 @@ const Messages = () => {
         return 'text';
     };
 
+    // Helper function to update the conversations list with a new message
+    const updateConversationWithMessage = (message: Message) => {
+        // Get the other user's ID (the one who is not the current user)
+        const currentUserId = localStorage.getItem('userId');
+        if (!currentUserId) return;
+
+        const otherUserId = message.sender_id === currentUserId
+            ? message.receiver_id
+            : message.sender_id;
+
+        // Check if this user is already in our conversations list
+        const existingConversationIndex = conversations.findIndex(
+            c => c.user_id === otherUserId
+        );
+
+        if (existingConversationIndex >= 0) {
+            // Update the existing conversation
+            const updatedConversations = [...conversations];
+            updatedConversations[existingConversationIndex] = {
+                ...updatedConversations[existingConversationIndex],
+                last_message: message.content,
+                last_message_time: message.created_at,
+                unread_count: message.sender_id !== currentUserId && !message.is_read
+                    ? updatedConversations[existingConversationIndex].unread_count + 1
+                    : updatedConversations[existingConversationIndex].unread_count
+            };
+            setConversations(updatedConversations);
+        } else {
+            // This is a new conversation, fetch the user info and add it
+            fetchUserInfo(otherUserId)
+                .then(userInfo => {
+                    if (userInfo) {
+                        const newConversation: Contact = {
+                            ...userInfo,
+                            last_message: message.content,
+                            last_message_time: message.created_at,
+                            unread_count: message.sender_id !== currentUserId && !message.is_read ? 1 : 0,
+                            connection_status: 'none' // We don't know the connection status yet
+                        };
+                        setConversations(prev => [newConversation, ...prev]);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching user info for new conversation:', error);
+                });
+        }
+    };
+
     return (
-        <div className="page-transition">
+        <div className="page-transition animate-fade-in">
             <div className="h-[calc(100vh-4rem)] flex flex-col md:flex-row">
                 {/* Conversation List */}
-                <ConversationList
-                    conversations={conversations}
-                    messageRequests={messageRequests}
-                    selectedContact={selectedContact}
-                    activeTab={activeTab}
-                    searchQuery={searchQuery}
-                    isLoading={isLoading}
-                    onSelectContact={setSelectedContact}
-                    onSearchChange={setSearchQuery}
-                    onTabChange={setActiveTab}
-                />
+                <div className="animate-slide-in-left w-full md:w-auto">
+                    <ConversationList
+                        conversations={conversations}
+                        messageRequests={messageRequests}
+                        selectedContact={selectedContact}
+                        activeTab={activeTab}
+                        searchQuery={searchQuery}
+                        isLoading={isLoading}
+                        onSelectContact={setSelectedContact}
+                        onSearchChange={setSearchQuery}
+                        onTabChange={setActiveTab}
+                    />
+                </div>
 
                 {/* Message Display */}
                 {selectedContact ? (
-                    <div className="flex flex-col flex-1 border-l">
+                    <div className="flex flex-col flex-1 border-l border-gray-200 dark:border-gray-800 animate-slide-in-right">
                         <MessageDisplay
-                            contact={selectedContact} // Make sure this prop name matches what the component expects
+                            contact={selectedContact}
                             messages={messages}
                             currentUserId={localStorage.getItem('userId') || ''}
                             onBack={() => setSelectedContact(null)}
@@ -533,10 +732,12 @@ const Messages = () => {
                         />
                     </div>
                 ) : (
-                    <div className="flex-1 flex items-center justify-center p-8 bg-muted/10">
-                        <div className="text-center">
-                            <MessagesSquare className="h-12 w-12 mx-auto text-muted-foreground" />
-                            <h3 className="mt-4 text-lg font-medium">Select a conversation</h3>
+                    <div className="hidden md:flex flex-1 items-center justify-center p-8 bg-gradient-to-br from-white/80 to-white/50 dark:from-gray-900/80 dark:to-gray-900/50 backdrop-blur-sm animate-fade-in">
+                        <div className="text-center glass-card rounded-xl p-8 shadow-xl backdrop-blur-sm border border-white/20 dark:border-gray-800/20 hover:shadow-2xl transition-all duration-300 transform hover:scale-105">
+                            <div className="p-4 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 mx-auto w-fit mb-4">
+                                <MessagesSquare className="h-12 w-12 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <h3 className="mt-4 text-lg font-medium bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Select a conversation</h3>
                             <p className="mt-2 text-sm text-muted-foreground">
                                 Choose a contact from the list to start messaging
                             </p>

@@ -49,6 +49,11 @@ export const loginUser = async (credentials: { email: string; password: string }
             localStorage.setItem('userId', user.id);
             localStorage.setItem('userName', user.name || '');
             localStorage.setItem('user', JSON.stringify(user));
+
+            // Store profile picture URL separately for easy access in messaging
+            if (user.profile_picture) {
+                localStorage.setItem('userProfilePic', user.profile_picture);
+            }
         }
 
         // Return the exact response data to ensure consistency

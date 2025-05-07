@@ -22,15 +22,16 @@ export const getMessageRequests = async (userId: string) => {
     try {
         if (!userId) {
             console.warn('No user ID provided to getMessageRequests');
-            return [];
+            return { requests: [] };
         }
 
         const response = await api.get(`/api/messages/requests/${userId}`);
+        console.log('Message requests response:', response.data);
         return response.data;
     } catch (error) {
         console.error('Error fetching message requests:', error);
         // Return empty array instead of throwing
-        return [];
+        return { requests: [] };
     }
 };
 
@@ -39,15 +40,28 @@ export const getMessages = async (userId: string, otherUserId: string) => {
     try {
         if (!userId || !otherUserId) {
             console.warn('Missing user IDs for getMessages');
-            return [];
+            return { messages: [] };
         }
 
         const response = await api.get(`/api/messages/${userId}/${otherUserId}`);
-        return response.data;
+        console.log('Messages response:', response.data);
+
+        // Always return in the expected format with a messages array
+        if (response.data && Array.isArray(response.data)) {
+            // If the API returned an array directly, wrap it
+            return { messages: response.data };
+        } else if (response.data && response.data.messages && Array.isArray(response.data.messages)) {
+            // If the API returned the expected format
+            return response.data;
+        } else {
+            // If the API returned something unexpected
+            console.warn('Unexpected messages response format:', response.data);
+            return { messages: [] };
+        }
     } catch (error) {
         console.error('Error fetching messages:', error);
         // Return empty array instead of throwing
-        return [];
+        return { messages: [] };
     }
 };
 
@@ -72,7 +86,7 @@ export const sendMessage = async (messageData: FormData) => {
         });
 
         // Make sure we're sending the token in the headers
-        const response = await api.post('/api/messages/send', messageData, {
+        const response = await api.post('/api/messages', messageData, {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'x-auth-token': token,
@@ -95,7 +109,7 @@ export const markMessagesAsRead = async (userId: string, senderId: string) => {
             throw new Error('Authentication token not found');
         }
 
-        const response = await api.put('/api/messages/read', { userId, senderId });
+        const response = await api.post('/api/messages/read', { userId, senderId });
         return response.data;
     } catch (error) {
         console.error('Error marking messages as read:', error);

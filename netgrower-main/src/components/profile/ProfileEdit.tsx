@@ -28,7 +28,6 @@ interface ProfileEditProps {
 export function ProfileEdit({ open, onClose, onProfileUpdate, userId, currentProfile }: ProfileEditProps) {
     const [formData, setFormData] = useState({
         name: currentProfile.name || '',
-        email: currentProfile.email || '',
         college: currentProfile.college || '',
         branch: currentProfile.branch || '',
         batch: currentProfile.batch || '',
@@ -44,7 +43,6 @@ export function ProfileEdit({ open, onClose, onProfileUpdate, userId, currentPro
         if (currentProfile) {
             setFormData({
                 name: currentProfile.name || '',
-                email: currentProfile.email || '',
                 college: currentProfile.college || '',
                 branch: currentProfile.branch || '',
                 batch: currentProfile.batch || '',
@@ -70,12 +68,16 @@ export function ProfileEdit({ open, onClose, onProfileUpdate, userId, currentPro
             const file = e.target.files[0];
             setProfileImage(file);
 
-            // Create preview URL
+            // Create preview URL for local display only
+            // This is a data URL that will only be used for preview in the edit dialog
+            // It will NOT be sent to the server or used as the actual profile picture URL
             const reader = new FileReader();
             reader.onloadend = () => {
                 setPreviewUrl(reader.result as string);
             };
             reader.readAsDataURL(file);
+
+            console.log("Image selected for upload:", file.name, file.type, `${(file.size / 1024).toFixed(2)} KB`);
         }
     };
 
@@ -88,7 +90,6 @@ export function ProfileEdit({ open, onClose, onProfileUpdate, userId, currentPro
             // Create FormData object
             const formDataObj = new FormData();
             formDataObj.append('name', formData.name);
-            formDataObj.append('email', formData.email);
             formDataObj.append('college', formData.college);
             formDataObj.append('branch', formData.branch);
             formDataObj.append('batch', formData.batch);
@@ -97,29 +98,95 @@ export function ProfileEdit({ open, onClose, onProfileUpdate, userId, currentPro
             // Add profile image if selected
             if (profileImage) {
                 // Check file size before uploading
-                if (profileImage.size > 5 * 1024 * 1024) { // 5MB limit for client-side validation
+                if (profileImage.size > 2 * 1024 * 1024) { // 2MB limit for client-side validation (matching server limit)
                     toast({
                         variant: "destructive",
                         title: "File too large",
-                        description: "Profile picture must be less than 5MB. Please select a smaller image.",
+                        description: "Profile picture must be less than 2MB. Please select a smaller image.",
                     });
                     setIsSubmitting(false);
                     return;
                 }
 
-                formDataObj.append('profile_picture', profileImage);
+                // Ensure we're using the correct field name 'avatar' for the dedicated endpoint
+                // This is critical - the server expects 'avatar' as the field name
+                console.log("Adding profile image to form data with field name 'avatar'");
+                formDataObj.append('avatar', profileImage);
+
+                // Log the form data to verify the file is being included
+                console.log("Form data entries:");
+                for (const [key, value] of formDataObj.entries()) {
+                    if (value instanceof File) {
+                        console.log(`${key}: File (${value.name}, ${value.type}, ${value.size} bytes)`);
+                    } else {
+                        console.log(`${key}: ${value}`);
+                    }
+                }
             }
 
             console.log("Submitting form data:", Object.fromEntries(formDataObj));
 
-            // Call API to update profile
-            const response = await updateProfile(userId, formDataObj);
+            // First, update basic profile info without the image
+            const basicFormData = new FormData();
+            basicFormData.append('name', formData.name);
+            basicFormData.append('college', formData.college);
+            basicFormData.append('branch', formData.branch);
+            basicFormData.append('batch', formData.batch);
+            basicFormData.append('linkedin_url', formData.linkedinUrl);
+
+            console.log("Updating basic profile info first");
+            const basicResponse = await axios.put(`${API_URL}/api/users/${userId}`, basicFormData, {
+                headers: {
+                    'x-auth-token': localStorage.getItem('token') || '',
+                    'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+                }
+            });
+
+            console.log("Basic profile update response:", basicResponse.data);
+
+            let response = basicResponse;
+
+            // If we have a profile image, upload it separately using the dedicated endpoint
+            if (profileImage) {
+                console.log("Now uploading profile image separately");
+
+                // Create a new FormData object just for the image
+                const imageFormData = new FormData();
+                imageFormData.append('avatar', profileImage);
+
+                try {
+                    // Call the dedicated avatar upload endpoint directly
+                    const imageResponse = await axios.post(`${API_URL}/api/users/${userId}/avatar`, imageFormData, {
+                        headers: {
+                            'x-auth-token': localStorage.getItem('token') || '',
+                            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+                        }
+                    });
+
+                    console.log("Image upload response:", imageResponse.data);
+
+                    // Combine the responses
+                    response = {
+                        data: {
+                            ...basicResponse.data,
+                            profile_picture: imageResponse.data.profile_picture,
+                            full_url: imageResponse.data.full_url
+                        }
+                    };
+                } catch (imageError) {
+                    console.error("Error uploading profile image:", imageError);
+                    toast({
+                        variant: "destructive",
+                        title: "Image Upload Failed",
+                        description: "Your profile was updated but the profile picture could not be uploaded. Please try again.",
+                    });
+                }
+            }
             console.log("Profile update response:", response);
 
             // Prepare updated profile data for parent component
             const updatedProfile = {
                 name: formData.name,
-                email: formData.email,
                 college: formData.college,
                 branch: formData.branch,
                 batch: formData.batch,
@@ -128,11 +195,49 @@ export function ProfileEdit({ open, onClose, onProfileUpdate, userId, currentPro
 
             // Add profile picture if it was updated
             const responseData = response.data?.data || response.data;
-            if (responseData && responseData.profile_picture) {
-                // Add timestamp to force refresh
-                const timestamp = new Date().getTime();
-                updatedProfile.profile_picture = `${API_URL}${responseData.profile_picture}?t=${timestamp}`;
-                console.log("Updated profile picture URL:", updatedProfile.profile_picture);
+            console.log("Full response data:", JSON.stringify(responseData, null, 2));
+
+            if (responseData) {
+                // Check if we have the full_url from the server (preferred)
+                if (responseData.full_url) {
+                    // Use the full URL provided by the server
+                    const timestamp = new Date().getTime();
+                    updatedProfile.profile_picture = `${responseData.full_url}?t=${timestamp}`;
+                    console.log("Using server-provided full URL:", updatedProfile.profile_picture);
+                }
+                // Fallback to profile_picture path if full_url is not available
+                else if (responseData.profile_picture) {
+                    // Add timestamp to force refresh
+                    const timestamp = new Date().getTime();
+                    // Ensure the URL is properly formatted with the API_URL
+                    const profilePicPath = responseData.profile_picture;
+                    const formattedPath = profilePicPath.startsWith('/') ? profilePicPath : `/${profilePicPath}`;
+                    updatedProfile.profile_picture = `${API_URL}${formattedPath}?t=${timestamp}`;
+                    console.log("Constructed profile picture URL:", updatedProfile.profile_picture);
+                }
+
+                // Only proceed if we have a valid URL (not a data URL)
+                if (updatedProfile.profile_picture && !updatedProfile.profile_picture.startsWith('data:')) {
+                    // Also update localStorage to ensure consistency across the app
+                    const userData = JSON.parse(localStorage.getItem('user') || '{}');
+                    // Store the path without the API_URL prefix in localStorage
+                    const profilePicPath = responseData.profile_picture || '';
+                    userData.profile_picture = profilePicPath;
+                    localStorage.setItem('user', JSON.stringify(userData));
+                    localStorage.setItem('userProfilePic', profilePicPath);
+
+                    // Preload the image to ensure it's in the browser cache
+                    const preloadImg = new Image();
+                    preloadImg.src = updatedProfile.profile_picture;
+                    console.log("Preloading image:", updatedProfile.profile_picture);
+
+                    // Don't update the preview URL - we'll close the dialog anyway
+                }
+            } else if (profileImage) {
+                // If we uploaded an image but didn't get a profile_picture back in the response,
+                // Don't use the data URL as a fallback - it will cause errors
+                console.log("No profile data in response, not using local preview");
+                // Don't set profile_picture to the data URL
             }
 
             console.log("Sending updated profile to parent:", updatedProfile);
@@ -150,19 +255,31 @@ export function ProfileEdit({ open, onClose, onProfileUpdate, userId, currentPro
             console.error("Error updating profile:", error);
 
             let errorMessage = "Failed to update profile. Please try again.";
+            let needsRefresh = false;
 
             if (error.code === 'ECONNABORTED') {
                 errorMessage = "The request timed out. Please try again with a smaller image.";
+            } else if (error.response && error.response.status === 401) {
+                errorMessage = "Your session has expired. Please refresh the page and try again.";
+                needsRefresh = true;
             } else if (error.response && error.response.data && error.response.data.msg) {
                 errorMessage = error.response.data.msg;
             } else if (error.message) {
                 errorMessage = error.message;
+                if (error.message.includes('session') || error.message.includes('expired')) {
+                    needsRefresh = true;
+                }
             }
 
             toast({
                 variant: "destructive",
                 title: "Update failed",
                 description: errorMessage,
+                action: needsRefresh ? (
+                    <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                        Refresh
+                    </Button>
+                ) : undefined
             });
         } finally {
             setIsSubmitting(false);
@@ -253,18 +370,7 @@ export function ProfileEdit({ open, onClose, onProfileUpdate, userId, currentPro
                                 />
                             </div>
 
-                            {/* Email */}
-                            <div className="grid gap-2">
-                                <Label htmlFor="email">Email</Label>
-                                <Input
-                                    id="email"
-                                    name="email"
-                                    type="email"
-                                    value={formData.email}
-                                    onChange={handleInputChange}
-                                    placeholder="Your email"
-                                />
-                            </div>
+
 
                             {/* College */}
                             <div className="grid gap-2">

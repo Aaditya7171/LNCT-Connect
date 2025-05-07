@@ -20,75 +20,75 @@ export class SocketService {
 
   // Update the initialize method to handle token authentication properly
   public initialize() {
-      if (this.initialized) return;
-  
-      const token = localStorage.getItem('token');
-      const userId = localStorage.getItem('userId');
-  
-      if (!token || !userId) {
-        console.error('Cannot initialize socket: missing authentication');
-        return;
+    if (this.initialized) return;
+
+    const token = localStorage.getItem('token');
+    const userId = localStorage.getItem('userId');
+
+    if (!token || !userId) {
+      console.error('Cannot initialize socket: missing authentication');
+      return;
+    }
+
+    console.log('Initializing socket with token length:', token.length);
+
+    this.socket = io(API_URL, {
+      transports: ['websocket'],
+      autoConnect: false,
+      auth: {
+        token: token // Send the token exactly as stored in localStorage
+      },
+      query: {
+        userId: userId
       }
-  
-      console.log('Initializing socket with token length:', token.length);
-  
-      this.socket = io(API_URL, {
-        transports: ['websocket'],
-        autoConnect: false,
-        auth: {
-          token: token // Send the token exactly as stored in localStorage
-        },
-        query: {
-          userId: userId
+    });
+
+    // Set up event listeners
+    this.socket.on('connect', () => {
+      console.log('Socket connected');
+      this.notifyConnectionListeners(true);
+      this.reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+
+      // Join a room with the user's ID for private messages
+      this.socket.emit('join', { room: userId });
+      console.log(`Joining room: ${userId}`);
+    });
+
+    this.socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      this.notifyErrorListeners(error);
+      this.notifyConnectionListeners(false);
+
+      // If it's an authentication error, clear the token
+      if (error.message.includes('authentication')) {
+        console.log('Socket authentication error, clearing token');
+        localStorage.removeItem('token');
+        localStorage.removeItem('userId');
+        localStorage.removeItem('userName');
+        localStorage.removeItem('user');
+
+        // Redirect to login page if not already there
+        if (window.location.pathname !== '/auth') {
+          window.location.href = '/auth';
         }
-      });
-  
-      // Set up event listeners
-      this.socket.on('connect', () => {
-        console.log('Socket connected');
-        this.notifyConnectionListeners(true);
-        this.reconnectAttempts = 0; // Reset reconnect attempts on successful connection
-        
-        // Join a room with the user's ID for private messages
-        this.socket.emit('join', { room: userId });
-        console.log(`Joining room: ${userId}`);
-      });
-  
-      this.socket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
-        this.notifyErrorListeners(error);
-        this.notifyConnectionListeners(false);
-        
-        // If it's an authentication error, clear the token
-        if (error.message.includes('authentication')) {
-          console.log('Socket authentication error, clearing token');
-          localStorage.removeItem('token');
-          localStorage.removeItem('userId');
-          localStorage.removeItem('userName');
-          localStorage.removeItem('user');
-          
-          // Redirect to login page if not already there
-          if (window.location.pathname !== '/auth') {
-            window.location.href = '/auth';
-          }
-        } else if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.scheduleReconnect();
-        } else {
-          console.log('Max reconnect attempts reached, giving up');
-        }
-      });
-  
-      // Rest of the event listeners...
+      } else if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.scheduleReconnect();
+      } else {
+        console.log('Max reconnect attempts reached, giving up');
+      }
+    });
+
+    // Rest of the event listeners...
   }
 
   private scheduleReconnect() {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
-    
+
     this.reconnectAttempts++;
     console.log(`Scheduling reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-    
+
     this.reconnectTimer = setTimeout(() => {
       console.log('Attempting to reconnect socket...');
       this.connect();
@@ -114,6 +114,9 @@ export class SocketService {
   }
 
   // Add this method to match what's being called in Messages.tsx
+  // Track received message IDs to prevent duplicates
+  private receivedMessageIds: Set<string> = new Set();
+
   public onNewMessage(callback: (data: any) => void) {
     return this.onMessage(callback);
   }
@@ -124,10 +127,35 @@ export class SocketService {
       this.connect();
     }
 
-    this.socket?.on('private-message', callback);
+    // Create a wrapper function to deduplicate messages
+    const messageHandler = (data: any) => {
+      // If we've already seen this message ID, ignore it
+      if (data.id && this.receivedMessageIds.has(data.id)) {
+        console.log('Ignoring duplicate message:', data.id);
+        return;
+      }
+
+      // Add this message ID to our set
+      if (data.id) {
+        this.receivedMessageIds.add(data.id);
+
+        // Limit the size of the set to prevent memory leaks
+        if (this.receivedMessageIds.size > 1000) {
+          // Remove the oldest entries (convert to array, slice, convert back to set)
+          this.receivedMessageIds = new Set(
+            Array.from(this.receivedMessageIds).slice(-500)
+          );
+        }
+      }
+
+      // Call the original callback
+      callback(data);
+    };
+
+    this.socket?.on('private-message', messageHandler);
 
     return () => {
-      this.socket?.off('private-message', callback);
+      this.socket?.off('private-message', messageHandler);
     };
   }
 

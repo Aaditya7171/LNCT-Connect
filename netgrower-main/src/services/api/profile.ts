@@ -42,9 +42,9 @@ export const getProfile = async (userId: string) => {
         if (error.response?.status === 401) {
             console.log("Authentication failed, clearing token");
             localStorage.removeItem('token');
-            
+
             // Only redirect if we're in a browser context and not already on the auth page
-            if (typeof window !== 'undefined' && 
+            if (typeof window !== 'undefined' &&
                 window.location.pathname !== '/auth') {
                 window.location.href = '/auth';
             }
@@ -78,12 +78,14 @@ export const updateProfile = async (userId: string, profileData: FormData) => {
         }
 
         console.log("Updating profile without image");
-        const basicResponse = await axios.put(`${API_URL}/api/users/${userId}`, basicFormData, {
-            timeout: 10000,
+        // Log the token for debugging (only the first few characters)
+        console.log("Token being used (first 10 chars):", token.substring(0, 10) + "...");
+
+        // Use the API instance with interceptors instead of direct axios
+        const basicResponse = await api.put(`/api/users/${userId}`, basicFormData, {
+            timeout: 15000, // Increase timeout
             headers: {
-                // For FormData, don't set Content-Type - axios will set it with boundary
-                'x-auth-token': token,
-                'Authorization': `Bearer ${token}`
+                // Don't set Content-Type for FormData - axios will set it with boundary
             }
         });
 
@@ -118,14 +120,32 @@ export const updateProfile = async (userId: string, profileData: FormData) => {
             const imageFormData = new FormData();
             imageFormData.append('avatar', imageToUpload);
 
+            // Log the form data to verify the file is being included
+            console.log("Form data entries for avatar upload:");
+            for (const [key, value] of imageFormData.entries()) {
+                if (value instanceof File) {
+                    console.log(`${key}: File (${value.name}, ${value.type}, ${value.size} bytes)`);
+                } else {
+                    console.log(`${key}: ${value}`);
+                }
+            }
+
             console.log("Now uploading the image with field name 'avatar'");
             try {
-                // Try the dedicated avatar endpoint with explicit token
+                // Try the dedicated avatar endpoint using direct axios for more control
+                const token = localStorage.getItem('token');
+
+                // Log the request details
+                console.log("Making POST request to:", `${API_URL}/api/users/${userId}/avatar`);
+                console.log("With token (first 10 chars):", token ? token.substring(0, 10) + "..." : "No token");
+
                 const imageResponse = await axios.post(`${API_URL}/api/users/${userId}/avatar`, imageFormData, {
+                    timeout: 30000, // 30 seconds timeout for image uploads
                     headers: {
-                        'x-auth-token': token
-                    },
-                    timeout: 30000 // 30 seconds timeout for image uploads
+                        // Don't set Content-Type for FormData - axios will set it with boundary
+                        'x-auth-token': token,
+                        'Authorization': `Bearer ${token}`
+                    }
                 });
 
                 console.log("Profile picture upload response:", imageResponse.data);
@@ -144,13 +164,22 @@ export const updateProfile = async (userId: string, profileData: FormData) => {
                 console.log("Trying alternative upload method...");
 
                 try {
+                    // Try a direct approach using the regular update endpoint
+                    console.log("Using direct profile update with image");
+
+                    // Create a new FormData with all the basic info plus the image
                     const altFormData = new FormData();
+
+                    // Add all the basic fields from the original form data
+                    for (const [key, value] of basicFormData.entries()) {
+                        altFormData.append(key, value);
+                    }
+
+                    // Add the image with the correct field name
                     altFormData.append('profile_picture', imageToUpload);
 
+                    // Make the request
                     const altResponse = await api.put(`/api/users/${userId}`, altFormData, {
-                        headers: {
-                            'Content-Type': 'multipart/form-data',
-                        },
                         timeout: 30000
                     });
 
@@ -184,6 +213,14 @@ export const updateProfile = async (userId: string, profileData: FormData) => {
                 statusText: error.response.statusText,
                 data: error.response.data
             });
+
+            // If it's an auth error, clear the token and redirect
+            if (error.response.status === 401) {
+                console.log("Authentication failed during profile update, refreshing token");
+
+                // Instead of immediately redirecting, we'll throw a more specific error
+                throw new Error('Your session has expired. Please refresh the page and try again.');
+            }
         }
 
         throw error;
@@ -220,6 +257,10 @@ export const uploadProfilePicture = async (userId: string, imageFile: File) => {
             const userData = JSON.parse(localStorage.getItem('user') || '{}');
             userData.profile_picture = response.data.profile_picture;
             localStorage.setItem('user', JSON.stringify(userData));
+
+            // Also store profile picture URL separately for easy access in messaging
+            localStorage.setItem('userProfilePic', response.data.profile_picture);
+
             console.log("Updated profile picture in localStorage:", userData.profile_picture);
         }
 

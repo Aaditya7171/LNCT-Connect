@@ -2,10 +2,14 @@
 import React from 'react';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
+import { ThemeBackground } from '../common/ThemeBackground';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative">
+      {/* Purple theme background - only visible in purple theme */}
+      <ThemeBackground />
+
       <Sidebar />
       <Navbar />
 

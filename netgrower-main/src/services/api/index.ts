@@ -8,6 +8,7 @@ export * from './profile';
 export * from './client';
 // Add any other API modules you have
 export * from './messages';
+export * from './forum';
 
 // Re-export connections functions
 export * from './connections';

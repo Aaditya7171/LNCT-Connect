@@ -93,16 +93,16 @@ const NetworkUserCard = ({ user, onUpdateConnection }: {
 
   // In the return JSX, add a message button next to the connect button
   return (
-    <div className="glass-card rounded-xl p-4 animate-fade-in">
+    <div className="glass-card rounded-xl p-4 animate-fade-in bg-gradient-to-br from-white/80 to-white/50 dark:from-gray-900/80 dark:to-gray-900/50 backdrop-blur-sm border border-white/20 dark:border-gray-800/20 shadow-xl hover:shadow-2xl transition-all duration-300 hover:translate-y-[-4px]">
       {/* User info section */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <Avatar className="h-12 w-12 border">
+          <Avatar className="h-12 w-12 border-2 border-white/50 dark:border-gray-700/50 shadow-md transition-transform duration-300 hover:scale-105">
             <AvatarImage src={getProfilePictureUrl(user.profile_picture)} alt={user.name} />
-            <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold">{user.name.charAt(0)}</AvatarFallback>
           </Avatar>
           <div>
-            <h3 className="font-medium">{user.name}</h3>
+            <h3 className="font-medium bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">{user.name}</h3>
             <p className="text-sm text-muted-foreground">
               {user.branch}, {user.college} {user.batch ? `(${user.batch})` : ''}
             </p>
@@ -115,10 +115,10 @@ const NetworkUserCard = ({ user, onUpdateConnection }: {
             <Button
               variant="outline"
               size="sm"
-              className="flex items-center gap-1"
+              className="flex items-center gap-1 bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 hover:shadow-md transition-all duration-300 hover:translate-y-[-2px]"
               onClick={handleMessage}
             >
-              <MessageSquare className="h-4 w-4" />
+              <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               <span className="hidden sm:inline">Message</span>
             </Button>
           )}
@@ -127,11 +127,18 @@ const NetworkUserCard = ({ user, onUpdateConnection }: {
           <Button
             variant={user.connection_status === 'connected' ? 'outline' : 'default'}
             size="sm"
-            className="flex items-center gap-1"
+            className={cn(
+              "flex items-center gap-1 transition-all duration-300 hover:translate-y-[-2px] shadow-sm hover:shadow-md",
+              user.connection_status === 'connected'
+                ? "bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30"
+                : user.connection_status === 'pending-received'
+                  ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
+                  : "bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white"
+            )}
             onClick={() => handleConnectionAction(user.id, user.connection_status)}
           >
             {user.connection_status === 'connected' ? (
-              <UserCheck className="h-4 w-4" />
+              <UserCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
             ) : user.connection_status === 'pending-received' ? (
               <Check className="h-4 w-4" />
             ) : (
@@ -264,108 +271,152 @@ const Network = () => {
   const suggestions = filteredUsers.filter(user => user.connection_status === 'none');
 
   return (
-    <div className="page-transition pb-20 md:pb-0">
-      <h1 className="text-2xl md:text-3xl font-bold mb-6">Network</h1>
+    <div className="page-transition pb-20 md:pb-0 animate-fade-in">
+      <h1 className="text-2xl md:text-3xl font-bold mb-6 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent animate-slide-in-left">Network</h1>
 
-      <div className="relative mb-6">
+      <div className="relative mb-6 animate-slide-in-right">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
         <Input
           type="search"
           placeholder="Search people..."
-          className="pl-10"
+          className="pl-10 border border-gray-300 dark:border-gray-700 focus:border-blue-500 dark:focus:border-blue-400 transition-all duration-300 shadow-sm hover:shadow-md"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
       </div>
 
       <Tabs defaultValue="connections">
-        <TabsList className="grid grid-cols-4 mb-6">
-          <TabsTrigger value="connections" className="flex items-center gap-2">
+        <TabsList className="grid grid-cols-4 mb-6 bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 rounded-lg p-1 shadow-md animate-fade-in" style={{ animationDelay: '0.2s' }}>
+          <TabsTrigger
+            value="connections"
+            className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white transition-all duration-300"
+          >
             <UserCheck className="h-4 w-4" />
             <span>Connections ({connections.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="received" className="flex items-center gap-2">
+          <TabsTrigger
+            value="received"
+            className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white transition-all duration-300"
+          >
             <UserPlus className="h-4 w-4" />
             <span>Received ({pendingReceivedRequests.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="sent" className="flex items-center gap-2">
+          <TabsTrigger
+            value="sent"
+            className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white transition-all duration-300"
+          >
             <UserPlus className="h-4 w-4" />
             <span>Sent ({pendingSentRequests.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="suggestions" className="flex items-center gap-2">
+          <TabsTrigger
+            value="suggestions"
+            className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white transition-all duration-300"
+          >
             <Users className="h-4 w-4" />
             <span>Suggestions ({suggestions.length})</span>
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="connections" className="space-y-4">
+        <TabsContent value="connections" className="space-y-4 animate-fade-in" style={{ animationDelay: '0.3s' }}>
           {isLoading ? (
-            <div className="text-center py-8">Loading connections...</div>
+            <div className="glass-card rounded-xl p-6 shadow-xl backdrop-blur-sm border border-white/20 dark:border-gray-800/20 text-center">
+              <div className="flex justify-center">
+                <div className="w-8 h-8 border-4 border-t-blue-500 border-b-purple-500 border-l-transparent border-r-transparent rounded-full animate-spin"></div>
+              </div>
+              <p className="mt-2 text-muted-foreground">Loading connections...</p>
+            </div>
           ) : connections.length > 0 ? (
-            connections.map(user => (
-              <NetworkUserCard
-                key={user.id}
-                user={user}
-                onUpdateConnection={updateConnectionStatus}
-              />
+            connections.map((user, index) => (
+              <div key={user.id} style={{ animationDelay: `${0.1 * index}s` }}>
+                <NetworkUserCard
+                  user={user}
+                  onUpdateConnection={updateConnectionStatus}
+                />
+              </div>
             ))
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              You don't have any connections yet. Check out the suggestions tab to connect with people.
+            <div className="glass-card rounded-xl p-6 shadow-xl backdrop-blur-sm border border-white/20 dark:border-gray-800/20 text-center">
+              <p className="text-muted-foreground">
+                You don't have any connections yet. Check out the suggestions tab to connect with people.
+              </p>
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="received" className="space-y-4">
+        <TabsContent value="received" className="space-y-4 animate-fade-in" style={{ animationDelay: '0.3s' }}>
           {isLoading ? (
-            <div className="text-center py-8">Loading received requests...</div>
+            <div className="glass-card rounded-xl p-6 shadow-xl backdrop-blur-sm border border-white/20 dark:border-gray-800/20 text-center">
+              <div className="flex justify-center">
+                <div className="w-8 h-8 border-4 border-t-blue-500 border-b-purple-500 border-l-transparent border-r-transparent rounded-full animate-spin"></div>
+              </div>
+              <p className="mt-2 text-muted-foreground">Loading received requests...</p>
+            </div>
           ) : pendingReceivedRequests.length > 0 ? (
-            pendingReceivedRequests.map(user => (
-              <NetworkUserCard
-                key={user.id}
-                user={user}
-                onUpdateConnection={updateConnectionStatus}
-              />
+            pendingReceivedRequests.map((user, index) => (
+              <div key={user.id} style={{ animationDelay: `${0.1 * index}s` }}>
+                <NetworkUserCard
+                  user={user}
+                  onUpdateConnection={updateConnectionStatus}
+                />
+              </div>
             ))
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No pending connection requests received.
+            <div className="glass-card rounded-xl p-6 shadow-xl backdrop-blur-sm border border-white/20 dark:border-gray-800/20 text-center">
+              <p className="text-muted-foreground">
+                No pending connection requests received.
+              </p>
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="sent" className="space-y-4">
+        <TabsContent value="sent" className="space-y-4 animate-fade-in" style={{ animationDelay: '0.3s' }}>
           {isLoading ? (
-            <div className="text-center py-8">Loading sent requests...</div>
+            <div className="glass-card rounded-xl p-6 shadow-xl backdrop-blur-sm border border-white/20 dark:border-gray-800/20 text-center">
+              <div className="flex justify-center">
+                <div className="w-8 h-8 border-4 border-t-blue-500 border-b-purple-500 border-l-transparent border-r-transparent rounded-full animate-spin"></div>
+              </div>
+              <p className="mt-2 text-muted-foreground">Loading sent requests...</p>
+            </div>
           ) : pendingSentRequests.length > 0 ? (
-            pendingSentRequests.map(user => (
-              <NetworkUserCard
-                key={user.id}
-                user={user}
-                onUpdateConnection={updateConnectionStatus}
-              />
+            pendingSentRequests.map((user, index) => (
+              <div key={user.id} style={{ animationDelay: `${0.1 * index}s` }}>
+                <NetworkUserCard
+                  user={user}
+                  onUpdateConnection={updateConnectionStatus}
+                />
+              </div>
             ))
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No pending connection requests sent.
+            <div className="glass-card rounded-xl p-6 shadow-xl backdrop-blur-sm border border-white/20 dark:border-gray-800/20 text-center">
+              <p className="text-muted-foreground">
+                No pending connection requests sent.
+              </p>
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="suggestions" className="space-y-4">
+        <TabsContent value="suggestions" className="space-y-4 animate-fade-in" style={{ animationDelay: '0.3s' }}>
           {isLoading ? (
-            <div className="text-center py-8">Loading suggestions...</div>
+            <div className="glass-card rounded-xl p-6 shadow-xl backdrop-blur-sm border border-white/20 dark:border-gray-800/20 text-center">
+              <div className="flex justify-center">
+                <div className="w-8 h-8 border-4 border-t-blue-500 border-b-purple-500 border-l-transparent border-r-transparent rounded-full animate-spin"></div>
+              </div>
+              <p className="mt-2 text-muted-foreground">Loading suggestions...</p>
+            </div>
           ) : suggestions.length > 0 ? (
-            suggestions.map(user => (
-              <NetworkUserCard
-                key={user.id}
-                user={user}
-                onUpdateConnection={updateConnectionStatus}
-              />
+            suggestions.map((user, index) => (
+              <div key={user.id} style={{ animationDelay: `${0.1 * index}s` }}>
+                <NetworkUserCard
+                  user={user}
+                  onUpdateConnection={updateConnectionStatus}
+                />
+              </div>
             ))
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No suggestions available at the moment.
+            <div className="glass-card rounded-xl p-6 shadow-xl backdrop-blur-sm border border-white/20 dark:border-gray-800/20 text-center">
+              <p className="text-muted-foreground">
+                No suggestions available at the moment.
+              </p>
             </div>
           )}
         </TabsContent>

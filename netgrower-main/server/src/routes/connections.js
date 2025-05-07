@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
-// If you have auth middleware, uncomment the next line
-// const auth = require('../middleware/auth');
+const auth = require('../middleware/auth');
 
 // Get all users with connection status for a specific user
 router.get('/users/:userId', async (req, res) => {
@@ -48,8 +47,8 @@ router.get('/users/:userId', async (req, res) => {
     }
 });
 
-// Update connection status
-router.post('/update', async (req, res) => {
+// Update connection status - add auth middleware
+router.post('/update', auth, async (req, res) => {
     const client = await pool.connect();
 
     try {
